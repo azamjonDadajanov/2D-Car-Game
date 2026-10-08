@@ -1,39 +1,34 @@
 """
 ==============================================================================
-   2D TOP-DOWN POLICE CHASE GAME - FULLSCREEN / FULL SIZE IMPLEMENTATION
+   2D TOP-DOWN POLICE CHASE GAME - COMPLETE WITH SOUND & FULLSCREEN
 ==============================================================================
-Enhanced & Fully Functional Pygame Top-Down Highway Chase Game in FULLSCREEN
-
 Features:
-1. Fullscreen / Full Size Display:
-   - Automatically adapts to monitor resolution (e.g. 1920x1080, 1536x864, etc.).
-   - Fullscreen mode with toggle support (Press 'F11' or 'F' to toggle Fullscreen/Windowed).
-   - Dynamically scales road, lanes, UI, HUD, and Garage elements to fit any screen.
-2. Sprite Slicing & Snap-to-Car (Transparent PNG with .convert_alpha()):
-   - Two-step cropping with `get_bounding_rect()` guarantees full cars with no border bleeding.
-   - Scaled to (80, 160) pixels to fill the road lanes properly.
-3. Road & Lanes:
-   - Narrow 3-lane highway matching 80px car width (~115 px/lane).
-   - Scrolling road markings, dashed dividers, and kerbs.
-4. Speed & Physics:
+1. Audio System (sounds/):
+   - 'game-start.mp3': Plays on game start / chase launch.
+   - 'in-game-sound.mp3': High-energy looped background music during chase.
+   - 'game-over.mp3': Dramatic sound effect on crash or police bust.
+2. Fullscreen Display:
+   - Fullscreen mode with dynamic scaling for any screen resolution.
+   - 'F11' or 'F' toggles Fullscreen / Windowed mode.
+3. Sprite Slicing & Snap-to-Car (Transparent PNG):
+   - Two-step cropping with get_bounding_rect() eliminates car overlaps/borders.
+   - Scaled to (80, 160) pixels.
+4. Physics & Driving Mechanics:
    - Base speed: 70 km/h.
-   - Holding [UP]: Accelerates up to 150 km/h and visually drives the player forward.
-   - Releasing: Smoothly returns to base 70 km/h and restores car screen position.
-   - Holding [DOWN]: Brakes to 50 km/h (traffic speed).
-5. Health & Damage Stages:
-   - 5 Lives mapped directly to damage frames (Col 0 = 100% health, Col 4 = 1 Life left).
-   - Collision with traffic = -1 Life, 2 seconds invulnerability with visual flicker.
-   - 0 Lives = Explosion & Game Over ("VEHICLE DESTROYED!").
+   - Hold [UP] / [W]: Boost up to 150 km/h and move forward.
+   - Release: Return to 70 km/h.
+   - Hold [DOWN] / [S]: Brake down to 50 km/h.
+5. Health & Visual Damage Stages:
+   - 5 Lives mapped to damage frames (Col 0 = 100% health, Col 4 = 1 Life).
+   - Collision = -1 Life & 2s invulnerability (flicker).
+   - 0 Lives = Explosion & Game Over.
 6. Police Pursuit AI:
-   - SWAT car (Row 1) chases from behind with active siren lights.
-   - Dynamic chase relative to player speed: catches up at cruise speed (70 km/h),
-     falls behind when boosted (100-150 km/h).
-   - If police is outrun off-screen, a 15-second respawn timer starts.
-   - Collision with police = Instant Game Over ("BUSTED BY POLICE!").
+   - SWAT car chases from behind with flashing sirens.
+   - Catches up if player is slow, falls behind when boosted.
+   - 15-second respawn timer if outrun.
 7. Economy & Garage System:
-   - Cash earned continuously: $100 per 1 KM (e.g., 0.1 KM = $10).
-   - Garage Menu: Red Sports Car (Free), Yellow Muscle Car ($500).
-   - Keyboard selection: Left/Right to browse, 'B' to buy, 'ENTER' to start.
+   - Earns $100 per 1 KM driven (calculated continuously).
+   - Garage: Red Car (Free), Yellow Car ($500).
 ==============================================================================
 """
 
@@ -47,18 +42,19 @@ import sys
 # INITIAL PYGAME & DISPLAY SETUP
 # ---------------------------------------------------------------------------
 pygame.init()
+pygame.mixer.init()
+
 info = pygame.display.Info()
-# Default to Full Desktop Resolution
 SCREEN_WIDTH = info.current_w if info.current_w > 0 else 1280
 SCREEN_HEIGHT = info.current_h if info.current_h > 0 else 720
-FPS = 120
+FPS = 60
 
-# Road geometry (Narrow 3 lanes for 80px cars, centered on screen)
+# Road geometry
 LANE_COUNT = 3
 CAR_WIDTH = 80
 CAR_HEIGHT = 160
 LANE_WIDTH = 115
-ROAD_WIDTH = LANE_COUNT * LANE_WIDTH  # ~345 px wide
+ROAD_WIDTH = LANE_COUNT * LANE_WIDTH  # 345 px
 ROAD_LEFT = (SCREEN_WIDTH - ROAD_WIDTH) // 2
 ROAD_RIGHT = ROAD_LEFT + ROAD_WIDTH
 
@@ -66,13 +62,11 @@ ROAD_RIGHT = ROAD_LEFT + ROAD_WIDTH
 SPEED_MIN = 50.0
 SPEED_DEFAULT = 70.0
 SPEED_MAX = 150.0
-ACCEL_RATE = 85.0    # km/h per second acceleration
-DECEL_RATE = 65.0    # km/h per second braking / recovery rate
+ACCEL_RATE = 85.0
+DECEL_RATE = 65.0
 
 TRAFFIC_SPEED_KMH = 50.0
 POLICE_SPEED_KMH = 75.0
-
-# Visual scrolling scaling factor
 SPEED_PIXEL_SCALE = 0.13
 
 # Colors
@@ -94,16 +88,65 @@ COLOR_DARK_OVERLAY = (0, 0, 0, 195)
 
 
 # ---------------------------------------------------------------------------
+# AUDIO MANAGER
+# ---------------------------------------------------------------------------
+class SoundManager:
+    def __init__(self):
+        self.sound_start = self._load_sound(["sounds/game-start.mp3", "game-start.mp3"])
+        self.sound_game_over = self._load_sound(["sounds/game-over.mp3", "game-over.mp3"])
+        self.music_path = self._find_path(["sounds/in-game-sound.mp3", "in-game-sound.mp3"])
+
+    def _find_path(self, candidates):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        for p in candidates:
+            full_p = os.path.join(base_dir, p)
+            if os.path.exists(full_p):
+                return full_p
+            if os.path.exists(p):
+                return p
+        return None
+
+    def _load_sound(self, candidates):
+        path = self._find_path(candidates)
+        if path:
+            try:
+                snd = pygame.mixer.Sound(path)
+                snd.set_volume(0.8)
+                print(f"[SOUND] Loaded sound: {path}")
+                return snd
+            except Exception as e:
+                print(f"[SOUND] Error loading sound {path}: {e}")
+        return None
+
+    def play_start(self):
+        if self.sound_start:
+            self.sound_start.play()
+
+    def play_game_over(self):
+        self.stop_music()
+        if self.sound_game_over:
+            self.sound_game_over.play()
+
+    def play_music(self):
+        if self.music_path:
+            try:
+                pygame.mixer.music.load(self.music_path)
+                pygame.mixer.music.set_volume(0.55)
+                pygame.mixer.music.play(-1)  # Loop indefinitely
+            except Exception as e:
+                print(f"[SOUND] Music playback error: {e}")
+
+    def stop_music(self):
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # SPRITE SHEET LOADER & ACCURATE BOUNDING RECT CROPPING
 # ---------------------------------------------------------------------------
 def load_car_sprites():
-    """
-    Loads transparent PNG ('cars_spritesheet.png' or 'cars_spritesheet.jpg')
-    using convert_alpha() and extracts cleanly segmented rows:
-    - Row 0: Red Sports Car
-    - Row 1: Police SWAT Car
-    - Row 2: Yellow Muscle Car
-    """
     candidate_paths = [
         "cars_spritesheet.png",
         os.path.join("assets", "cars_spritesheet.png"),
@@ -130,15 +173,11 @@ def load_car_sprites():
 
     if sheet_img is not None:
         img_w, img_h = sheet_img.get_size()
-        
-        # Exact proportional row boundaries (Y min ratio, Y max ratio)
         row_ratios = [
             (0.095, 0.360),  # Row 0: Red
             (0.370, 0.695),  # Row 1: Police SWAT
             (0.710, 0.965),  # Row 2: Yellow Muscle
         ]
-
-        # 5 Column center ratios across the width
         col_center_ratios = [0.185, 0.347, 0.508, 0.670, 0.831]
         cell_w = int(img_w * 0.13)
 
@@ -155,7 +194,6 @@ def load_car_sprites():
                 safe_rect = pygame.Rect(bx, top_y, cell_w, min(cell_h, img_h - top_y))
                 cell = sheet_img.subsurface(safe_rect).copy()
                 
-                # Snap with bounding rect
                 bbox = cell.get_bounding_rect()
                 if bbox.width > 0 and bbox.height > 0:
                     snapped_cell = cell.subsurface(bbox)
@@ -265,13 +303,11 @@ class Player(pygame.sprite.Sprite):
         self.image = self.frames[0]
         self.rect = self.image.get_rect()
         
-        # Position
         self.rect.centerx = ROAD_LEFT + ROAD_WIDTH // 2
         self.base_y = SCREEN_HEIGHT - CAR_HEIGHT - 50
         self.target_y = self.base_y
         self.rect.y = self.base_y
 
-        # Speeds & Controls
         self.speed_kmh = SPEED_DEFAULT
         self.steer_speed = 7.5
         self.invulnerable_timer = 0.0
@@ -295,25 +331,21 @@ class Player(pygame.sprite.Sprite):
 
         keys = pygame.key.get_pressed()
 
-        # 1. Acceleration / Deceleration physics
         if keys[pygame.K_UP] or keys[pygame.K_w]:
             self.speed_kmh = min(SPEED_MAX, self.speed_kmh + ACCEL_RATE * dt_seconds)
         elif keys[pygame.K_DOWN] or keys[pygame.K_s]:
             self.speed_kmh = max(SPEED_MIN, self.speed_kmh - DECEL_RATE * dt_seconds)
         else:
-            # Smoothly return to default cruise speed (70 km/h)
             if self.speed_kmh > SPEED_DEFAULT:
                 self.speed_kmh = max(SPEED_DEFAULT, self.speed_kmh - DECEL_RATE * 0.7 * dt_seconds)
             elif self.speed_kmh < SPEED_DEFAULT:
                 self.speed_kmh = min(SPEED_DEFAULT, self.speed_kmh + ACCEL_RATE * 0.7 * dt_seconds)
 
-        # 2. Visual Forward/Backward adjustment
         speed_factor = (self.speed_kmh - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)
         max_forward_y = SCREEN_HEIGHT * 0.35
         self.target_y = self.base_y - speed_factor * (self.base_y - max_forward_y)
         self.rect.y += (self.target_y - self.rect.y) * 0.1
 
-        # 3. Lateral Steering
         dx = 0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             dx -= self.steer_speed
@@ -322,7 +354,6 @@ class Player(pygame.sprite.Sprite):
 
         self.rect.x += int(dx)
 
-        # Clamp strictly within road boundaries
         min_x = ROAD_LEFT + 6
         max_x = ROAD_RIGHT - CAR_WIDTH - 6
         if self.rect.left < min_x:
@@ -428,7 +459,6 @@ class Road:
             pygame.draw.rect(surface, k_color, (ROAD_RIGHT, y + offset, kerb_w, 40))
 
         pygame.draw.rect(surface, COLOR_ROAD, (ROAD_LEFT, 0, ROAD_WIDTH, SCREEN_HEIGHT))
-
         pygame.draw.line(surface, COLOR_LINE_WHITE, (ROAD_LEFT + 4, 0), (ROAD_LEFT + 4, SCREEN_HEIGHT), 4)
         pygame.draw.line(surface, COLOR_LINE_WHITE, (ROAD_RIGHT - 4, 0), (ROAD_RIGHT - 4, SCREEN_HEIGHT), 4)
 
@@ -448,14 +478,16 @@ class Road:
 # ---------------------------------------------------------------------------
 class Game:
     def __init__(self):
-        pygame.display.set_caption("Police Pursuit - 2D Highway Chase (FULLSCREEN)")
+        pygame.display.set_caption("Police Pursuit - 2D Highway Chase")
         
-        # Start in Fullscreen mode by default
         self.fullscreen = True
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
         self.clock = pygame.time.Clock()
 
-        # Dynamic scalable fonts
+        # Audio Manager
+        self.audio = SoundManager()
+
+        # Fonts
         self.font_huge = pygame.font.SysFont("impact", int(SCREEN_HEIGHT * 0.075))
         self.font_large = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.040), bold=True)
         self.font_medium = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.028), bold=True)
@@ -465,7 +497,7 @@ class Game:
 
         self.total_cash = 0.0
         self.unlocked_cars = {"red": True, "yellow": False}
-        self.car_prices = {"red": 0, "yellow": 100}
+        self.car_prices = {"red": 0, "yellow": 500}
         self.selected_car_index = 0
         self.available_car_keys = ["red", "yellow"]
 
@@ -506,6 +538,10 @@ class Game:
         self.traffic_spawn_timer = 0.0
         self.game_over_reason = ""
 
+        # Play start sound & launch in-game music
+        self.audio.play_start()
+        self.audio.play_music()
+
     def spawn_traffic_vehicle(self):
         lane_idx = random.randint(0, LANE_COUNT - 1)
         lane_center_x = ROAD_LEFT + lane_idx * LANE_WIDTH + LANE_WIDTH // 2
@@ -517,6 +553,11 @@ class Game:
                 return
                 
         self.traffic_group.add(traffic_car)
+
+    def trigger_game_over(self, reason):
+        self.game_over_reason = reason
+        self.state = "GAME_OVER"
+        self.audio.play_game_over()
 
     def run(self):
         running = True
@@ -564,6 +605,7 @@ class Game:
             elif self.state == "GAME_OVER":
                 if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE):
                     self.state = "MENU"
+                    self.audio.stop_music()
                 elif event.key == pygame.K_r:
                     car_key = self.get_selected_car_key()
                     if self.unlocked_cars[car_key]:
@@ -599,8 +641,7 @@ class Game:
                         
                         if self.player.lives <= 0:
                             self.particles.emit_explosion(self.player.rect.centerx, self.player.rect.centery, 60)
-                            self.game_over_reason = "VEHICLE DESTROYED! (0 LIVES LEFT)"
-                            self.state = "GAME_OVER"
+                            self.trigger_game_over("VEHICLE DESTROYED! (0 LIVES LEFT)")
                             return
 
             if self.police_active and self.police is not None:
@@ -613,8 +654,7 @@ class Game:
 
                 elif self.police is not None and pygame.sprite.collide_rect(self.player, self.police):
                     self.particles.emit_spark(self.player.rect.centerx, self.player.rect.bottom, 30)
-                    self.game_over_reason = "BUSTED BY POLICE!"
-                    self.state = "GAME_OVER"
+                    self.trigger_game_over("BUSTED BY POLICE!")
                     return
             else:
                 if self.police_respawn_timer > 0:
@@ -659,7 +699,7 @@ class Game:
         self.screen.blit(hud_surface, (0, 0))
         pygame.draw.line(self.screen, COLOR_BLUE, (0, hud_h), (SCREEN_WIDTH, hud_h), 2)
 
-        # 1. Speedometer (Left)
+        # 1. Speedometer
         speed_color = COLOR_GOLD if self.player.speed_kmh > 100 else COLOR_TEXT
         speed_txt = self.font_medium.render(f"SPEED: {int(self.player.speed_kmh)} KM/H", True, speed_color)
         self.screen.blit(speed_txt, (25, 8))
@@ -670,7 +710,7 @@ class Game:
             hint_txt = self.font_small.render("[UP] BOOST  [DOWN] BRAKE", True, (170, 180, 200))
             self.screen.blit(hint_txt, (25, int(hud_h * 0.55)))
 
-        # 2. Lives Bar (Center-Left)
+        # 2. Lives Bar
         lives_x = int(SCREEN_WIDTH * 0.28)
         lives_label = self.font_medium.render("LIVES:", True, COLOR_TEXT)
         self.screen.blit(lives_label, (lives_x, 8))
@@ -682,14 +722,14 @@ class Game:
             else:
                 pygame.draw.rect(self.screen, (60, 60, 60), heart_rect, border_radius=4)
 
-        # 3. Distance & Continuous Cash (Center-Right)
+        # 3. Distance & Continuous Cash
         dist_x = int(SCREEN_WIDTH * 0.52)
         dist_txt = self.font_medium.render(f"DIST: {self.distance_km:.2f} KM", True, COLOR_GOLD)
         self.screen.blit(dist_txt, (dist_x, 8))
         cash_txt = self.font_small.render(f"+${self.cash_earned_this_run:.1f}  (Bank: ${self.total_cash:.0f})", True, COLOR_GREEN)
         self.screen.blit(cash_txt, (dist_x, int(hud_h * 0.55)))
 
-        # 4. Police Pursuit Status (Right)
+        # 4. Police Pursuit Status
         pol_x = int(SCREEN_WIDTH * 0.76)
         if self.police_active and self.police is not None:
             pol_dist_px = self.police.rect.top - self.player.rect.bottom
@@ -711,14 +751,12 @@ class Game:
         overlay.fill((10, 15, 25, 220))
         self.screen.blit(overlay, (0, 0))
 
-        # Title & Subtitle
         title = self.font_huge.render("POLICE HIGHWAY CHASE", True, COLOR_GOLD)
         self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, int(SCREEN_HEIGHT * 0.05)))
 
         subtitle = self.font_medium.render("OUTRUN THE SWAT PURSUIT & SURVIVE THE HIGHWAY", True, COLOR_TEXT)
         self.screen.blit(subtitle, (SCREEN_WIDTH // 2 - subtitle.get_width() // 2, int(SCREEN_HEIGHT * 0.13)))
 
-        # Bank Box
         bank_w, bank_h = int(SCREEN_WIDTH * 0.28), int(SCREEN_HEIGHT * 0.065)
         bank_box = pygame.Rect(SCREEN_WIDTH // 2 - bank_w // 2, int(SCREEN_HEIGHT * 0.18), bank_w, bank_h)
         pygame.draw.rect(self.screen, (20, 30, 45), bank_box, border_radius=8)
@@ -726,7 +764,6 @@ class Game:
         cash_txt = self.font_large.render(f"BANK: ${self.total_cash:.0f}", True, COLOR_GREEN)
         self.screen.blit(cash_txt, (bank_box.centerx - cash_txt.get_width() // 2, bank_box.centery - cash_txt.get_height() // 2))
 
-        # Garage Container
         garage_w, garage_h = int(SCREEN_WIDTH * 0.56), int(SCREEN_HEIGHT * 0.48)
         garage_rect = pygame.Rect(SCREEN_WIDTH // 2 - garage_w // 2, int(SCREEN_HEIGHT * 0.27), garage_w, garage_h)
         pygame.draw.rect(self.screen, (25, 35, 50, 230), garage_rect, border_radius=12)
@@ -756,7 +793,6 @@ class Game:
             c_name = self.font_medium.render(cfg["name"], True, COLOR_TEXT)
             self.screen.blit(c_name, (card_rect.centerx - c_name.get_width() // 2, card_rect.top + 12))
 
-            # Car Sprite Preview
             car_sprite = self.sprites[key][0]
             self.screen.blit(car_sprite, (card_rect.centerx - CAR_WIDTH // 2, card_rect.top + int(card_h * 0.20)))
 
@@ -770,7 +806,6 @@ class Game:
                 sel_tag = self.font_small.render("[SELECTED]", True, COLOR_GOLD)
                 self.screen.blit(sel_tag, (card_rect.centerx - sel_tag.get_width() // 2, card_rect.bottom - 20))
 
-        # Bottom Instructions
         sel_key = self.get_selected_car_key()
         if not self.unlocked_cars[sel_key]:
             price = self.car_prices[sel_key]
