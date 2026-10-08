@@ -1,14 +1,16 @@
 """
 ==============================================================================
-   2D TOP-DOWN POLICE CHASE GAME - COMPLETE WITH SOUND (WINDOWED MODE)
+   2D TOP-DOWN POLICE CHASE GAME - WITH ROADSIDE SCENERY & SOUNDS
 ==============================================================================
 Features:
-1. Windowed Display:
-   - Fixed clean 800x700 windowed mode.
+1. Roadside Scenery (assets/):
+   - Trees ('tree1.png' / 'tree2.png') and Stones ('stone.png') smoothly scroll
+     along the left and right grass sides.
+   - Clean grass background without dark horizontal stripes.
 2. Audio System (sounds/):
-   - 'game-start.mp3': Plays on game start / chase launch.
-   - 'in-game-sound.mp3': High-energy looped background music during chase.
-   - 'game-over.mp3': Dramatic sound effect on crash or police bust.
+   - 'game-start.mp3': Plays on chase start / retry.
+   - 'in-game-sound.mp3': Looped high-energy music during chase.
+   - 'game-over.mp3': Dramatic audio on crash / police bust.
 3. Sprite Slicing & Snap-to-Car (Transparent PNG):
    - Two-step cropping with get_bounding_rect() eliminates car overlaps/borders.
    - Scaled to (80, 160) pixels.
@@ -38,7 +40,7 @@ import os
 import sys
 
 # ---------------------------------------------------------------------------
-# INITIAL PYGAME & DISPLAY SETUP (WINDOWED MODE: 800x700)
+# INITIAL PYGAME & DISPLAY SETUP (800x700 WINDOWED)
 # ---------------------------------------------------------------------------
 pygame.init()
 pygame.mixer.init()
@@ -68,11 +70,9 @@ POLICE_SPEED_KMH = 75.0
 SPEED_PIXEL_SCALE = 0.13
 
 # Colors
-COLOR_GRASS = (34, 139, 34)
-COLOR_GRASS_DARK = (26, 110, 26)
-COLOR_ROAD = (42, 45, 52)
-COLOR_ROAD_SHOULDER = (75, 75, 80)
-COLOR_KERB_RED = (215, 45, 45)
+COLOR_GRASS = (46, 139, 87)       # Clean lush solid grass (Sea Green)
+COLOR_ROAD = (40, 44, 52)         # Clean dark asphalt
+COLOR_KERB_RED = (220, 50, 50)
 COLOR_KERB_WHITE = (245, 245, 245)
 COLOR_LINE_WHITE = (250, 250, 250)
 COLOR_LINE_YELLOW = (255, 204, 0)
@@ -139,6 +139,103 @@ class SoundManager:
             pygame.mixer.music.stop()
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# SCENERY LOADER & MANAGER (TREES & STONES ALONG ROADSIDES)
+# ---------------------------------------------------------------------------
+def load_scenery_images():
+    """
+    Loads tree1.png, tree2.png, and stone.png from assets/
+    """
+    scenery_configs = [
+        {"names": ["tree1.png", "tree.png"], "size": (85, 85), "type": "tree"},
+        {"names": ["tree2.png"], "size": (85, 85), "type": "tree"},
+        {"names": ["stone.png"], "size": (50, 50), "type": "stone"},
+    ]
+    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    loaded_scenery = []
+
+    for cfg in scenery_configs:
+        img_surf = None
+        for name in cfg["names"]:
+            for candidate in [os.path.join("assets", name), name, os.path.join(base_dir, "assets", name)]:
+                if os.path.exists(candidate):
+                    try:
+                        raw = pygame.image.load(candidate).convert_alpha()
+                        img_surf = pygame.transform.smoothscale(raw, cfg["size"])
+                        loaded_scenery.append(img_surf)
+                        break
+                    except Exception as e:
+                        print(f"[SCENERY] Error loading {candidate}: {e}")
+            if img_surf:
+                break
+        
+        # Procedural fallback if image missing
+        if img_surf is None:
+            surf = pygame.Surface(cfg["size"], pygame.SRCALPHA)
+            if cfg["type"] == "tree":
+                # Procedural green tree
+                pygame.draw.circle(surf, (34, 139, 34), (cfg["size"][0]//2, cfg["size"][1]//2), cfg["size"][0]//2 - 4)
+                pygame.draw.circle(surf, (46, 180, 46), (cfg["size"][0]//2 - 6, cfg["size"][1]//2 - 6), cfg["size"][0]//3)
+            else:
+                # Procedural stone
+                pygame.draw.ellipse(surf, (140, 140, 145), (4, 8, cfg["size"][0]-8, cfg["size"][1]-16))
+                pygame.draw.ellipse(surf, (170, 170, 175), (8, 12, cfg["size"][0]-16, cfg["size"][1]-24))
+            loaded_scenery.append(surf)
+
+    return loaded_scenery
+
+
+class SceneryManager:
+    def __init__(self, scenery_images):
+        self.images = scenery_images
+        self.props = []
+        
+        # Populate initial props along left and right grass
+        num_props_per_side = 7
+        spacing = (SCREEN_HEIGHT + 300) // num_props_per_side
+
+        for i in range(num_props_per_side):
+            # Left side
+            y_pos = -150 + i * spacing + random.randint(-20, 20)
+            self._add_prop(side="left", y=y_pos)
+            # Right side
+            y_pos_r = -150 + i * spacing + random.randint(-20, 20)
+            self._add_prop(side="right", y=y_pos_r)
+
+    def _add_prop(self, side, y):
+        img = random.choice(self.images)
+        w, h = img.get_size()
+        
+        if side == "left":
+            min_x = 15
+            max_x = max(min_x + 5, ROAD_LEFT - w - 20)
+            x = random.randint(min_x, max_x)
+        else:
+            min_x = ROAD_RIGHT + 20
+            max_x = max(min_x + 5, SCREEN_WIDTH - w - 15)
+            x = random.randint(min_x, max_x)
+
+        self.props.append({"image": img, "x": x, "y": y, "side": side, "w": w, "h": h})
+
+    def update(self, player_speed_kmh):
+        dy = player_speed_kmh * SPEED_PIXEL_SCALE
+        for p in self.props:
+            p["y"] += dy
+            if p["y"] > SCREEN_HEIGHT + 120:
+                p["y"] = random.randint(-220, -100)
+                p["image"] = random.choice(self.images)
+                p["w"], p["h"] = p["image"].get_size()
+                if p["side"] == "left":
+                    p["x"] = random.randint(15, max(20, ROAD_LEFT - p["w"] - 20))
+                else:
+                    p["x"] = random.randint(ROAD_RIGHT + 20, max(ROAD_RIGHT + 25, SCREEN_WIDTH - p["w"] - 15))
+
+    def draw(self, surface):
+        for p in self.props:
+            surface.blit(p["image"], (p["x"], p["y"]))
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +528,7 @@ class Police(pygame.sprite.Sprite):
 
 
 # ---------------------------------------------------------------------------
-# ROAD & ENVIRONMENT RENDERER
+# ROAD & ENVIRONMENT RENDERER (CLEAN GRASS WITHOUT BLACK STRIPES)
 # ---------------------------------------------------------------------------
 class Road:
     def __init__(self):
@@ -442,24 +539,29 @@ class Road:
         self.scroll_y = (self.scroll_y + dy) % 80
 
     def draw(self, surface):
+        # 1. Solid Clean Grass Background (No dark stripes)
         surface.fill(COLOR_GRASS)
-        stripe_height = 80
-        offset = int(self.scroll_y) % stripe_height
-        for y in range(-stripe_height, SCREEN_HEIGHT + stripe_height, stripe_height):
-            pygame.draw.rect(surface, COLOR_GRASS_DARK, (0, y + offset, SCREEN_WIDTH, stripe_height // 2))
 
-        kerb_w = 18
-        pygame.draw.rect(surface, COLOR_ROAD_SHOULDER, (ROAD_LEFT - kerb_w - 4, 0, ROAD_WIDTH + (kerb_w + 4) * 2, SCREEN_HEIGHT))
-        
-        for y in range(-stripe_height, SCREEN_HEIGHT + stripe_height, 40):
-            k_color = COLOR_KERB_RED if (int((y + offset) // 40) % 2 == 0) else COLOR_KERB_WHITE
-            pygame.draw.rect(surface, k_color, (ROAD_LEFT - kerb_w, y + offset, kerb_w, 40))
-            pygame.draw.rect(surface, k_color, (ROAD_RIGHT, y + offset, kerb_w, 40))
-
+        # 2. Road Surface
         pygame.draw.rect(surface, COLOR_ROAD, (ROAD_LEFT, 0, ROAD_WIDTH, SCREEN_HEIGHT))
-        pygame.draw.line(surface, COLOR_LINE_WHITE, (ROAD_LEFT + 4, 0), (ROAD_LEFT + 4, SCREEN_HEIGHT), 4)
-        pygame.draw.line(surface, COLOR_LINE_WHITE, (ROAD_RIGHT - 4, 0), (ROAD_RIGHT - 4, SCREEN_HEIGHT), 4)
 
+        # 3. Alternating Kerb Stripes (Left & Right)
+        kerb_w = 16
+        stripe_h = 40
+        offset = int(self.scroll_y) % (stripe_h * 2)
+
+        for y in range(-stripe_h * 2, SCREEN_HEIGHT + stripe_h * 2, stripe_h):
+            k_color = COLOR_KERB_RED if (int((y + offset) // stripe_h) % 2 == 0) else COLOR_KERB_WHITE
+            # Left Kerb
+            pygame.draw.rect(surface, k_color, (ROAD_LEFT - kerb_w, y + offset, kerb_w, stripe_h))
+            # Right Kerb
+            pygame.draw.rect(surface, k_color, (ROAD_RIGHT, y + offset, kerb_w, stripe_h))
+
+        # 4. Clean Solid White Road Boundary Lines
+        pygame.draw.line(surface, COLOR_LINE_WHITE, (ROAD_LEFT, 0), (ROAD_LEFT, SCREEN_HEIGHT), 4)
+        pygame.draw.line(surface, COLOR_LINE_WHITE, (ROAD_RIGHT, 0), (ROAD_RIGHT, SCREEN_HEIGHT), 4)
+
+        # 5. Dashed Yellow Lane Dividers
         dash_len = 36
         dash_gap = 26
         total_dash = dash_len + dash_gap
@@ -482,6 +584,10 @@ class Game:
 
         # Audio Manager
         self.audio = SoundManager()
+
+        # Scenery Manager (Trees & Stones)
+        self.scenery_images = load_scenery_images()
+        self.scenery = SceneryManager(self.scenery_images)
 
         # Fonts
         self.font_huge = pygame.font.SysFont("impact", 54)
@@ -600,7 +706,10 @@ class Game:
 
     def update(self, dt_sec):
         if self.state == "PLAYING":
+            # Update Road & Scenery
             self.road.update(self.player.speed_kmh)
+            self.scenery.update(self.player.speed_kmh)
+
             self.player.update(dt_sec)
 
             distance_delta = (self.player.speed_kmh / 3600.0) * dt_sec
@@ -664,18 +773,28 @@ class Game:
             self.draw_game_over()
 
     def draw_gameplay(self):
+        # 1. Road Background (Clean Grass & Asphalt)
         self.road.draw(self.screen)
 
+        # 2. Roadside Scenery (Trees and Stones along grass)
+        self.scenery.draw(self.screen)
+
+        # 3. Traffic Sprites
         for traffic in self.traffic_group:
             self.screen.blit(traffic.image, traffic.rect)
 
+        # 4. Police Sprite
         if self.police_active and self.police is not None:
             self.police.draw(self.screen)
 
+        # 5. Player Sprite
         if self.player is not None and self.player.lives > 0:
             self.player.draw(self.screen)
 
+        # 6. Particle Effects
         self.particles.draw(self.screen)
+
+        # 7. In-Game HUD
         self.draw_hud()
 
     def draw_hud(self):
@@ -729,6 +848,7 @@ class Game:
 
     def draw_menu(self):
         self.road.draw(self.screen)
+        self.scenery.draw(self.screen)
 
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((10, 15, 25, 215))
