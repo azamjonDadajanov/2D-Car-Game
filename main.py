@@ -1,15 +1,14 @@
 """
 ==============================================================================
-   2D TOP-DOWN POLICE CHASE GAME - COMPLETE WITH SOUND & FULLSCREEN
+   2D TOP-DOWN POLICE CHASE GAME - COMPLETE WITH SOUND (WINDOWED MODE)
 ==============================================================================
 Features:
-1. Audio System (sounds/):
+1. Windowed Display:
+   - Fixed clean 800x700 windowed mode.
+2. Audio System (sounds/):
    - 'game-start.mp3': Plays on game start / chase launch.
    - 'in-game-sound.mp3': High-energy looped background music during chase.
    - 'game-over.mp3': Dramatic sound effect on crash or police bust.
-2. Fullscreen Display:
-   - Fullscreen mode with dynamic scaling for any screen resolution.
-   - 'F11' or 'F' toggles Fullscreen / Windowed mode.
 3. Sprite Slicing & Snap-to-Car (Transparent PNG):
    - Two-step cropping with get_bounding_rect() eliminates car overlaps/borders.
    - Scaled to (80, 160) pixels.
@@ -39,22 +38,21 @@ import os
 import sys
 
 # ---------------------------------------------------------------------------
-# INITIAL PYGAME & DISPLAY SETUP
+# INITIAL PYGAME & DISPLAY SETUP (WINDOWED MODE: 800x700)
 # ---------------------------------------------------------------------------
 pygame.init()
 pygame.mixer.init()
 
-info = pygame.display.Info()
-SCREEN_WIDTH = info.current_w if info.current_w > 0 else 1280
-SCREEN_HEIGHT = info.current_h if info.current_h > 0 else 720
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 700
 FPS = 60
 
 # Road geometry
 LANE_COUNT = 3
 CAR_WIDTH = 80
 CAR_HEIGHT = 160
-LANE_WIDTH = 115
-ROAD_WIDTH = LANE_COUNT * LANE_WIDTH  # 345 px
+ROAD_WIDTH = 330
+LANE_WIDTH = ROAD_WIDTH // LANE_COUNT  # 110 px
 ROAD_LEFT = (SCREEN_WIDTH - ROAD_WIDTH) // 2
 ROAD_RIGHT = ROAD_LEFT + ROAD_WIDTH
 
@@ -132,7 +130,7 @@ class SoundManager:
             try:
                 pygame.mixer.music.load(self.music_path)
                 pygame.mixer.music.set_volume(0.55)
-                pygame.mixer.music.play(-1)  # Loop indefinitely
+                pygame.mixer.music.play(-1)
             except Exception as e:
                 print(f"[SOUND] Music playback error: {e}")
 
@@ -304,12 +302,12 @@ class Player(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         
         self.rect.centerx = ROAD_LEFT + ROAD_WIDTH // 2
-        self.base_y = SCREEN_HEIGHT - CAR_HEIGHT - 50
+        self.base_y = SCREEN_HEIGHT - CAR_HEIGHT - 40
         self.target_y = self.base_y
         self.rect.y = self.base_y
 
         self.speed_kmh = SPEED_DEFAULT
-        self.steer_speed = 7.5
+        self.steer_speed = 7.0
         self.invulnerable_timer = 0.0
 
     def take_damage(self):
@@ -342,7 +340,7 @@ class Player(pygame.sprite.Sprite):
                 self.speed_kmh = min(SPEED_DEFAULT, self.speed_kmh + ACCEL_RATE * 0.7 * dt_seconds)
 
         speed_factor = (self.speed_kmh - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)
-        max_forward_y = SCREEN_HEIGHT * 0.35
+        max_forward_y = SCREEN_HEIGHT * 0.38
         self.target_y = self.base_y - speed_factor * (self.base_y - max_forward_y)
         self.rect.y += (self.target_y - self.rect.y) * 0.1
 
@@ -479,19 +477,17 @@ class Road:
 class Game:
     def __init__(self):
         pygame.display.set_caption("Police Pursuit - 2D Highway Chase")
-        
-        self.fullscreen = True
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
 
         # Audio Manager
         self.audio = SoundManager()
 
         # Fonts
-        self.font_huge = pygame.font.SysFont("impact", int(SCREEN_HEIGHT * 0.075))
-        self.font_large = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.040), bold=True)
-        self.font_medium = pygame.font.SysFont("arial", int(SCREEN_HEIGHT * 0.028), bold=True)
-        self.font_small = pygame.font.SysFont("consolas", int(SCREEN_HEIGHT * 0.022), bold=True)
+        self.font_huge = pygame.font.SysFont("impact", 54)
+        self.font_large = pygame.font.SysFont("arial", 28, bold=True)
+        self.font_medium = pygame.font.SysFont("arial", 20, bold=True)
+        self.font_small = pygame.font.SysFont("consolas", 15, bold=True)
 
         self.sprites = load_car_sprites()
 
@@ -515,13 +511,6 @@ class Game:
         self.police_respawn_timer = 0.0
         self.police_active = False
 
-    def toggle_fullscreen(self):
-        self.fullscreen = not self.fullscreen
-        if self.fullscreen:
-            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
-        else:
-            self.screen = pygame.display.set_mode((1280, 720), pygame.RESIZABLE)
-
     def get_selected_car_key(self):
         return self.available_car_keys[self.selected_car_index]
 
@@ -538,7 +527,6 @@ class Game:
         self.traffic_spawn_timer = 0.0
         self.game_over_reason = ""
 
-        # Play start sound & launch in-game music
         self.audio.play_start()
         self.audio.play_music()
 
@@ -568,8 +556,6 @@ class Game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.KEYDOWN and event.key in (pygame.K_F11, pygame.K_f):
-                    self.toggle_fullscreen()
                 else:
                     self.handle_event(event)
 
@@ -693,7 +679,7 @@ class Game:
         self.draw_hud()
 
     def draw_hud(self):
-        hud_h = int(SCREEN_HEIGHT * 0.085)
+        hud_h = 65
         hud_surface = pygame.Surface((SCREEN_WIDTH, hud_h), pygame.SRCALPHA)
         hud_surface.fill(COLOR_UI_BG)
         self.screen.blit(hud_surface, (0, 0))
@@ -702,20 +688,19 @@ class Game:
         # 1. Speedometer
         speed_color = COLOR_GOLD if self.player.speed_kmh > 100 else COLOR_TEXT
         speed_txt = self.font_medium.render(f"SPEED: {int(self.player.speed_kmh)} KM/H", True, speed_color)
-        self.screen.blit(speed_txt, (25, 8))
+        self.screen.blit(speed_txt, (15, 10))
         if self.player.invulnerable_timer > 0:
             inv_txt = self.font_small.render(f"SHIELD: {self.player.invulnerable_timer:.1f}s", True, COLOR_RED)
-            self.screen.blit(inv_txt, (25, int(hud_h * 0.55)))
+            self.screen.blit(inv_txt, (15, 38))
         else:
             hint_txt = self.font_small.render("[UP] BOOST  [DOWN] BRAKE", True, (170, 180, 200))
-            self.screen.blit(hint_txt, (25, int(hud_h * 0.55)))
+            self.screen.blit(hint_txt, (15, 38))
 
         # 2. Lives Bar
-        lives_x = int(SCREEN_WIDTH * 0.28)
         lives_label = self.font_medium.render("LIVES:", True, COLOR_TEXT)
-        self.screen.blit(lives_label, (lives_x, 8))
+        self.screen.blit(lives_label, (215, 10))
         for i in range(5):
-            heart_rect = pygame.Rect(lives_x + 75 + i * 24, 12, 20, 20)
+            heart_rect = pygame.Rect(280 + i * 22, 12, 18, 18)
             if i < self.player.lives:
                 pygame.draw.rect(self.screen, COLOR_RED, heart_rect, border_radius=4)
                 pygame.draw.rect(self.screen, (255, 255, 255), heart_rect, 1, border_radius=4)
@@ -723,59 +708,57 @@ class Game:
                 pygame.draw.rect(self.screen, (60, 60, 60), heart_rect, border_radius=4)
 
         # 3. Distance & Continuous Cash
-        dist_x = int(SCREEN_WIDTH * 0.52)
         dist_txt = self.font_medium.render(f"DIST: {self.distance_km:.2f} KM", True, COLOR_GOLD)
-        self.screen.blit(dist_txt, (dist_x, 8))
+        self.screen.blit(dist_txt, (410, 10))
         cash_txt = self.font_small.render(f"+${self.cash_earned_this_run:.1f}  (Bank: ${self.total_cash:.0f})", True, COLOR_GREEN)
-        self.screen.blit(cash_txt, (dist_x, int(hud_h * 0.55)))
+        self.screen.blit(cash_txt, (410, 38))
 
         # 4. Police Pursuit Status
-        pol_x = int(SCREEN_WIDTH * 0.76)
         if self.police_active and self.police is not None:
             pol_dist_px = self.police.rect.top - self.player.rect.bottom
             pol_txt = self.font_medium.render("PURSUIT ACTIVE!", True, COLOR_RED)
-            self.screen.blit(pol_txt, (pol_x, 8))
+            self.screen.blit(pol_txt, (615, 10))
             dist_desc = f"Gap: {max(0, pol_dist_px)} px"
             gap_txt = self.font_small.render(dist_desc, True, COLOR_TEXT)
-            self.screen.blit(gap_txt, (pol_x, int(hud_h * 0.55)))
+            self.screen.blit(gap_txt, (615, 38))
         else:
             status_txt = self.font_medium.render("POLICE OUTRUN!", True, COLOR_GREEN)
-            self.screen.blit(status_txt, (pol_x, 8))
+            self.screen.blit(status_txt, (615, 10))
             timer_txt = self.font_small.render(f"Next in: {self.police_respawn_timer:.1f}s", True, COLOR_GOLD)
-            self.screen.blit(timer_txt, (pol_x, int(hud_h * 0.55)))
+            self.screen.blit(timer_txt, (615, 38))
 
     def draw_menu(self):
         self.road.draw(self.screen)
 
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((10, 15, 25, 220))
+        overlay.fill((10, 15, 25, 215))
         self.screen.blit(overlay, (0, 0))
 
         title = self.font_huge.render("POLICE HIGHWAY CHASE", True, COLOR_GOLD)
-        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, int(SCREEN_HEIGHT * 0.05)))
+        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 35))
 
         subtitle = self.font_medium.render("OUTRUN THE SWAT PURSUIT & SURVIVE THE HIGHWAY", True, COLOR_TEXT)
-        self.screen.blit(subtitle, (SCREEN_WIDTH // 2 - subtitle.get_width() // 2, int(SCREEN_HEIGHT * 0.13)))
+        self.screen.blit(subtitle, (SCREEN_WIDTH // 2 - subtitle.get_width() // 2, 95))
 
-        bank_w, bank_h = int(SCREEN_WIDTH * 0.28), int(SCREEN_HEIGHT * 0.065)
-        bank_box = pygame.Rect(SCREEN_WIDTH // 2 - bank_w // 2, int(SCREEN_HEIGHT * 0.18), bank_w, bank_h)
+        # Bank Cash Display
+        bank_box = pygame.Rect(SCREEN_WIDTH // 2 - 160, 135, 320, 45)
         pygame.draw.rect(self.screen, (20, 30, 45), bank_box, border_radius=8)
         pygame.draw.rect(self.screen, COLOR_GREEN, bank_box, 2, border_radius=8)
         cash_txt = self.font_large.render(f"BANK: ${self.total_cash:.0f}", True, COLOR_GREEN)
         self.screen.blit(cash_txt, (bank_box.centerx - cash_txt.get_width() // 2, bank_box.centery - cash_txt.get_height() // 2))
 
-        garage_w, garage_h = int(SCREEN_WIDTH * 0.56), int(SCREEN_HEIGHT * 0.48)
-        garage_rect = pygame.Rect(SCREEN_WIDTH // 2 - garage_w // 2, int(SCREEN_HEIGHT * 0.27), garage_w, garage_h)
+        # Garage Container
+        garage_rect = pygame.Rect(SCREEN_WIDTH // 2 - 320, 195, 640, 350)
         pygame.draw.rect(self.screen, (25, 35, 50, 230), garage_rect, border_radius=12)
         pygame.draw.rect(self.screen, COLOR_BLUE, garage_rect, 2, border_radius=12)
 
         garage_title = self.font_large.render("GARAGE / SELECT VEHICLE", True, COLOR_TEXT)
         self.screen.blit(garage_title, (garage_rect.centerx - garage_title.get_width() // 2, garage_rect.top + 15))
 
-        card_w, card_h = int(garage_w * 0.42), int(garage_h * 0.74)
+        card_w, card_h = 240, 260
         car_configs = [
-            {"key": "red", "name": "Red Sports Car", "x": garage_rect.left + int(garage_w * 0.06)},
-            {"key": "yellow", "name": "Yellow Muscle Car", "x": garage_rect.left + int(garage_w * 0.52)}
+            {"key": "red", "name": "Red Sports Car", "x": garage_rect.left + 50},
+            {"key": "yellow", "name": "Yellow Muscle Car", "x": garage_rect.left + 350}
         ]
 
         for idx, cfg in enumerate(car_configs):
@@ -784,27 +767,27 @@ class Game:
             is_unlocked = self.unlocked_cars[key]
             price = self.car_prices[key]
 
-            card_rect = pygame.Rect(cfg["x"], garage_rect.top + int(garage_h * 0.18), card_w, card_h)
+            card_rect = pygame.Rect(cfg["x"], garage_rect.top + 55, card_w, card_h)
             bg_c = (35, 48, 70) if is_selected else (20, 28, 40)
             border_c = COLOR_GOLD if is_selected else (60, 75, 100)
             pygame.draw.rect(self.screen, bg_c, card_rect, border_radius=8)
             pygame.draw.rect(self.screen, border_c, card_rect, 3 if is_selected else 1, border_radius=8)
 
             c_name = self.font_medium.render(cfg["name"], True, COLOR_TEXT)
-            self.screen.blit(c_name, (card_rect.centerx - c_name.get_width() // 2, card_rect.top + 12))
+            self.screen.blit(c_name, (card_rect.centerx - c_name.get_width() // 2, card_rect.top + 10))
 
             car_sprite = self.sprites[key][0]
-            self.screen.blit(car_sprite, (card_rect.centerx - CAR_WIDTH // 2, card_rect.top + int(card_h * 0.20)))
+            self.screen.blit(car_sprite, (card_rect.centerx - CAR_WIDTH // 2, card_rect.top + 38))
 
             if is_unlocked:
                 status_txt = self.font_medium.render("UNLOCKED", True, COLOR_GREEN)
             else:
                 status_txt = self.font_medium.render(f"LOCKED - ${price}", True, COLOR_RED)
-            self.screen.blit(status_txt, (card_rect.centerx - status_txt.get_width() // 2, card_rect.bottom - 44))
+            self.screen.blit(status_txt, (card_rect.centerx - status_txt.get_width() // 2, card_rect.bottom - 42))
 
             if is_selected:
                 sel_tag = self.font_small.render("[SELECTED]", True, COLOR_GOLD)
-                self.screen.blit(sel_tag, (card_rect.centerx - sel_tag.get_width() // 2, card_rect.bottom - 20))
+                self.screen.blit(sel_tag, (card_rect.centerx - sel_tag.get_width() // 2, card_rect.bottom - 18))
 
         sel_key = self.get_selected_car_key()
         if not self.unlocked_cars[sel_key]:
@@ -815,18 +798,17 @@ class Game:
         else:
             action_prompt = self.font_large.render("Press 'ENTER' or 'SPACE' to START CHASE", True, COLOR_GREEN)
         
-        self.screen.blit(action_prompt, (SCREEN_WIDTH // 2 - action_prompt.get_width() // 2, int(SCREEN_HEIGHT * 0.78)))
+        self.screen.blit(action_prompt, (SCREEN_WIDTH // 2 - action_prompt.get_width() // 2, 560))
 
-        controls_txt = self.font_small.render("Controls: [LEFT / RIGHT] Steer | [UP] Accelerate (150 km/h) | [F11] Fullscreen | [ESC] Exit", True, (200, 200, 210))
-        self.screen.blit(controls_txt, (SCREEN_WIDTH // 2 - controls_txt.get_width() // 2, int(SCREEN_HEIGHT * 0.88)))
+        controls_txt = self.font_small.render("Controls: [LEFT / RIGHT] Steer | [UP] Accelerate (150 km/h) | Earn $100 per 1 KM", True, (200, 200, 210))
+        self.screen.blit(controls_txt, (SCREEN_WIDTH // 2 - controls_txt.get_width() // 2, 650))
 
     def draw_game_over(self):
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill(COLOR_DARK_OVERLAY)
         self.screen.blit(overlay, (0, 0))
 
-        panel_w, panel_h = int(SCREEN_WIDTH * 0.45), int(SCREEN_HEIGHT * 0.55)
-        panel = pygame.Rect(SCREEN_WIDTH // 2 - panel_w // 2, SCREEN_HEIGHT // 2 - panel_h // 2, panel_w, panel_h)
+        panel = pygame.Rect(SCREEN_WIDTH // 2 - 280, SCREEN_HEIGHT // 2 - 190, 560, 380)
         pygame.draw.rect(self.screen, (20, 25, 38), panel, border_radius=12)
         pygame.draw.rect(self.screen, COLOR_RED, panel, 3, border_radius=12)
 
@@ -837,19 +819,19 @@ class Game:
         self.screen.blit(title, (panel.centerx - title.get_width() // 2, panel.top + 20))
 
         reason = self.font_medium.render(self.game_over_reason, True, COLOR_TEXT)
-        self.screen.blit(reason, (panel.centerx - reason.get_width() // 2, panel.top + int(panel_h * 0.26)))
+        self.screen.blit(reason, (panel.centerx - reason.get_width() // 2, panel.top + 85))
 
         dist_info = self.font_large.render(f"Distance Survived: {self.distance_km:.2f} KM", True, COLOR_GOLD)
-        self.screen.blit(dist_info, (panel.centerx - dist_info.get_width() // 2, panel.top + int(panel_h * 0.40)))
+        self.screen.blit(dist_info, (panel.centerx - dist_info.get_width() // 2, panel.top + 135))
 
         cash_info = self.font_large.render(f"Earned: +${self.cash_earned_this_run:.1f}   |   Bank: ${self.total_cash:.0f}", True, COLOR_GREEN)
-        self.screen.blit(cash_info, (panel.centerx - cash_info.get_width() // 2, panel.top + int(panel_h * 0.54)))
+        self.screen.blit(cash_info, (panel.centerx - cash_info.get_width() // 2, panel.top + 185))
 
         prompt1 = self.font_medium.render("Press 'R' to Retry Chase", True, COLOR_TEXT)
-        self.screen.blit(prompt1, (panel.centerx - prompt1.get_width() // 2, panel.top + int(panel_h * 0.72)))
+        self.screen.blit(prompt1, (panel.centerx - prompt1.get_width() // 2, panel.top + 255))
 
         prompt2 = self.font_medium.render("Press 'ENTER' or 'ESC' for Garage / Menu", True, (180, 180, 190))
-        self.screen.blit(prompt2, (panel.centerx - prompt2.get_width() // 2, panel.top + int(panel_h * 0.84)))
+        self.screen.blit(prompt2, (panel.centerx - prompt2.get_width() // 2, panel.top + 295))
 
 
 # ---------------------------------------------------------------------------
